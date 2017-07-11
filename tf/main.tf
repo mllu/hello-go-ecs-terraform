@@ -7,10 +7,10 @@ variable "lb_port" { default = 80 }
 variable "aws_region" { default = "us-east-2" }
 variable "key_name" {default = "dev"}
 #variable "key_name" {default = "ec2-ohio"}
-variable "dockerimg" {default = "mllu/gohttpserver"}
+variable "dockerimg" {default = "mllu/hello-go-ecs-terraform"}
 variable "az_count" {
   description = "Number of AZs to cover in a given AWS region"
-  default     = "2"
+  default     = "3"
 }
 
 provider "aws" {
@@ -168,7 +168,8 @@ resource "aws_iam_policy_attachment" "ecs_elb" {
 
 # The ECS cluster
 resource "aws_ecs_cluster" "cluster" {
-    name = "${var.appname}_${var.environ}"
+    #name = "${var.appname}_${var.environ}"
+    name = "default"
 }
 
 data "template_file" "task_definition" {
@@ -247,7 +248,7 @@ resource "aws_iam_instance_profile" "ecs" {
 resource "aws_launch_configuration" "ecs_cluster" {
   name = "${var.appname}_cluster_conf_${var.environ}"
   instance_type = "t2.micro"
-  image_id = "ami-8b92b4ee"
+  image_id = "ami-207b5a45"
   iam_instance_profile = "${aws_iam_instance_profile.ecs.id}"
   associate_public_ip_address = true
   security_groups = [
