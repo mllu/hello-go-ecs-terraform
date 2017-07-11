@@ -5,8 +5,8 @@ variable "host_port" { default = 8080 }
 variable "docker_port" { default = 8080 }
 variable "lb_port" { default = 80 }
 variable "aws_region" { default = "us-east-2" }
-#variable "key_name" {default = "dev"}
-variable "key_name" {default = "ec2-ohio"}
+variable "key_name" {default = "dev"}
+#variable "key_name" {default = "ec2-ohio"}
 variable "dockerimg" {default = "mllu/gohttpserver"}
 variable "az_count" {
   description = "Number of AZs to cover in a given AWS region"
