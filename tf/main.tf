@@ -168,8 +168,7 @@ resource "aws_iam_policy_attachment" "ecs_elb" {
 
 # The ECS cluster
 resource "aws_ecs_cluster" "cluster" {
-    #name = "${var.appname}_${var.environ}"
-    name = "default"
+    name = "${var.appname}_${var.environ}"
 }
 
 data "template_file" "task_definition" {
@@ -233,13 +232,6 @@ resource "aws_ecs_service" "ecs_service" {
   }
 }
 
-data "template_file" "user_data" {
-  template = "ec2_user_data.tmpl"
-  vars {
-    cluster_name = "${var.appname}_${var.environ}"
-  }
-}
-
 resource "aws_iam_instance_profile" "ecs" {
   name = "${var.appname}_${var.environ}"
   role = "${aws_iam_role.ecs.name}"
@@ -256,7 +248,7 @@ resource "aws_launch_configuration" "ecs_cluster" {
     "${aws_security_group.allow_all_outbound.id}",
     "${aws_security_group.allow_cluster.id}",
   ]
-  user_data = "${data.template_file.user_data.rendered}"
+  user_data = "#!/bin/bash\necho ECS_CLUSTER='${var.appname}_${var.environ}' > /etc/ecs/ecs.config"
   key_name = "${var.key_name}"
 }
 
