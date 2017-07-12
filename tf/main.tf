@@ -6,6 +6,12 @@ variable "appname" {default = "HelloGoEcsTerraform" }
 variable "host_port" { default = 8080 }
 variable "docker_port" { default = 8080 }
 variable "lb_port" { default = 80 }
+variable "master_port" {
+  description = "The port the master will use for redis requests"
+  #default = 6379
+  default = 8080
+}
+
 variable "aws_region" { default = "us-east-2" }
 variable "key_name" {default = "dev"}
 variable "dockerimg" {default = "mllu/hello-go-ecs-terraform"}
@@ -31,9 +37,9 @@ variable "amis" {
   }
 }
 
-
 resource "aws_vpc" "main" {
-    cidr_block = "10.10.0.0/16"
+  cidr_block = "10.10.0.0/16"
+  enable_dns_hostnames = "true"
 }
 
 resource "aws_subnet" "main" {
@@ -41,6 +47,7 @@ resource "aws_subnet" "main" {
   cidr_block        = "${cidrsubnet(aws_vpc.main.cidr_block, 8, count.index)}"
   availability_zone = "${data.aws_availability_zones.available.names[count.index]}"
   vpc_id            = "${aws_vpc.main.id}"
+  map_public_ip_on_launch = "true"
 }
 
 
@@ -121,6 +128,64 @@ resource "aws_security_group" "allow_all_ssh" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
+
+# set up master node
+resource "aws_eip" "master_ip" {
+  vpc = true
+  instance   = "${aws_instance.master.id}"
+  # reduntant explicit dependency just to be clear
+  depends_on = ["aws_instance.master"]
+}
+
+resource "aws_security_group" "master" {
+  name = "master"
+  vpc_id = "${aws_vpc.main.id}"
+
+  ingress {
+    from_port = "${var.master_port}"
+    to_port = "${var.master_port}"
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port = "22"
+    to_port = "22"
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port = 0
+    to_port = 0
+    protocol = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_instance" "master" {
+  ami = "${lookup(var.amis, var.aws_region)}"
+  instance_type = "${var.instance_type}"
+  key_name = "${var.key_name}"
+  subnet_id = "${element(aws_subnet.main.*.id, 1)}"
+  vpc_security_group_ids = ["${aws_security_group.master.id}"]
+
+  tags {
+    Name = "master"
+  }
+
+  user_data = <<-EOF
+              #!/bin/bash
+              echo "Hello, World" > index.html
+              nohup busybox httpd -f -p "${var.master_port}" &
+              EOF
+}
+
+# end of setting master
 
 # This role has a trust relationship which allows
 # to assume the role of ec2
@@ -283,6 +348,14 @@ resource "aws_autoscaling_group" "ecs_cluster" {
 #    command = "cd .. && docker build -t ${var.dockerimg} . && docker push ${var.dockerimg}"
 #  }
 #}
+
+output "master_public_dns" {
+  value = "${aws_instance.master.public_dns}"
+}
+
+output "master_public_ip" {
+  value = "${aws_instance.master.public_ip}"
+}
 
 output "availability_zones" {
   value = "${data.aws_availability_zones.available.names}"
