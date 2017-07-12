@@ -14,7 +14,7 @@ variable "instance_type" {
 }
 
 variable "min_scale_size" {default = "0" }
-variable "max_scale_size" {default = "3" }
+variable "max_scale_size" {default = "10" }
 
 provider "aws" {
   region = "${var.aws_region}"
