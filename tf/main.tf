@@ -1,4 +1,6 @@
 
+data "aws_availability_zones" "available" {}
+
 variable "environ" {default = "UNKNOWN" }
 variable "appname" {default = "HelloGoEcsTerraform" }
 variable "host_port" { default = 8080 }
@@ -6,25 +8,36 @@ variable "docker_port" { default = 8080 }
 variable "lb_port" { default = 80 }
 variable "aws_region" { default = "us-east-2" }
 variable "key_name" {default = "dev"}
-#variable "key_name" {default = "ec2-ohio"}
 variable "dockerimg" {default = "mllu/hello-go-ecs-terraform"}
-variable "az_count" {
-  description = "Number of AZs to cover in a given AWS region"
-  default     = "3"
+variable "instance_type" {
+  default = "t2.micro"
 }
+
+variable "min_scale_size" {default = "0" }
+variable "max_scale_size" {default = "3" }
 
 provider "aws" {
   region = "${var.aws_region}"
 }
 
-data "aws_availability_zones" "available" {}
+/* ECS optimized AMIs per region */
+variable "amis" {
+  default = {
+    us-east-1 = "ami-04351e12"
+    us-east-2 = "ami-207b5a45"
+    us-west-1 = "ami-7d664a1d"
+    us-west-2 = "ami-57d9cd2e"
+    ca-central-1 = "ami-3da81759"
+  }
+}
+
 
 resource "aws_vpc" "main" {
     cidr_block = "10.10.0.0/16"
 }
 
 resource "aws_subnet" "main" {
-  count             = "${var.az_count}"
+  count             = "${length(data.aws_availability_zones.available.names)}"
   cidr_block        = "${cidrsubnet(aws_vpc.main.cidr_block, 8, count.index)}"
   availability_zone = "${data.aws_availability_zones.available.names[count.index]}"
   vpc_id            = "${aws_vpc.main.id}"
@@ -45,7 +58,7 @@ resource "aws_route_table" "r" {
 }
 
 resource "aws_route_table_association" "a" {
-  count          = "${var.az_count}"
+  count             = "${length(data.aws_availability_zones.available.names)}"
   subnet_id      = "${element(aws_subnet.main.*.id, count.index)}"
   route_table_id = "${aws_route_table.r.id}"
 }
@@ -141,7 +154,6 @@ resource "aws_iam_policy_attachment" "ecs_for_ec2" {
 # This is the role for the load balancer to have access to ECS.
 resource "aws_iam_role" "ecs_elb" {
   name = "${var.appname}_ecs_elb_${var.environ}"
-  path = "/"
   assume_role_policy = <<EOF
 {
     "Version": "2012-10-17",
@@ -172,7 +184,7 @@ resource "aws_ecs_cluster" "cluster" {
 }
 
 data "template_file" "task_definition" {
-  depends_on = ["null_resource.docker"]
+  #depends_on = ["null_resource.docker"]
   template = "${file("task-definition.json.tmpl")}"
   vars {
     name = "${var.appname}_${var.environ}"
@@ -180,7 +192,7 @@ data "template_file" "task_definition" {
     docker_port = "${var.docker_port}"
     host_port = "${var.host_port}"
     # this is so that task is always deployed when the image changes
-    _img_id = "${null_resource.docker.id}"
+    #_img_id = "${null_resource.docker.id}"
   }
 }
 
@@ -220,7 +232,7 @@ resource "aws_ecs_service" "ecs_service" {
   name = "${var.appname}_${var.environ}"
   cluster = "${aws_ecs_cluster.cluster.id}"
   task_definition = "${aws_ecs_task_definition.ecs_task.arn}"
-  desired_count = 3
+  desired_count = "${length(data.aws_availability_zones.available.names)}"
   iam_role = "${aws_iam_role.ecs_elb.arn}"
   depends_on = ["aws_iam_policy_attachment.ecs_elb"]
   deployment_minimum_healthy_percent = 50
@@ -239,8 +251,8 @@ resource "aws_iam_instance_profile" "ecs" {
 
 resource "aws_launch_configuration" "ecs_cluster" {
   name = "${var.appname}_cluster_conf_${var.environ}"
-  instance_type = "t2.micro"
-  image_id = "ami-207b5a45"
+  instance_type = "${var.instance_type}"
+  image_id = "${lookup(var.amis, var.aws_region)}"
   iam_instance_profile = "${aws_iam_instance_profile.ecs.id}"
   associate_public_ip_address = true
   security_groups = [
@@ -255,19 +267,28 @@ resource "aws_launch_configuration" "ecs_cluster" {
 resource "aws_autoscaling_group" "ecs_cluster" {
   name = "${var.appname}_${var.environ}"
   vpc_zone_identifier  = ["${aws_subnet.main.*.id}"]
-  min_size = 0
-  max_size = 3
-  desired_capacity = 3
+  min_size = "${var.min_scale_size}"
+  max_size = "${var.max_scale_size}"
+  desired_capacity = "${length(data.aws_availability_zones.available.names)}"
   launch_configuration = "${aws_launch_configuration.ecs_cluster.name}"
   health_check_type = "EC2"
 }
 
-resource "null_resource" "docker" {
-  triggers {
-    # This is a lame hack but it works
-    log_hash = "${base64sha256(file("${path.module}/../.git/logs/HEAD"))}"
-  }
-  provisioner "local-exec" {
-    command = "cd .. && docker build -t ${var.dockerimg} . && docker push ${var.dockerimg}"
-  }
+#resource "null_resource" "docker" {
+#  triggers {
+#    # This is a lame hack but it works
+#    log_hash = "${base64sha256(file("${path.module}/../.git/logs/HEAD"))}"
+#  }
+#  provisioner "local-exec" {
+#    command = "cd .. && docker build -t ${var.dockerimg} . && docker push ${var.dockerimg}"
+#  }
+#}
+
+output "availability_zones" {
+  value = "${data.aws_availability_zones.available.names}"
 }
+
+output "elb_dns_name" {
+  value = "${aws_elb.service_elb.dns_name}"
+}
+
