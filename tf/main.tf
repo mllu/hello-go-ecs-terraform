@@ -130,12 +130,12 @@ resource "aws_security_group" "allow_all_ssh" {
 }
 
 # set up master node
-resource "aws_eip" "master_ip" {
-  vpc = true
-  instance   = "${aws_instance.master.id}"
-  # reduntant explicit dependency just to be clear
-  depends_on = ["aws_instance.master"]
-}
+#resource "aws_eip" "master_ip" {
+#  vpc = true
+#  instance   = "${aws_instance.master.id}"
+#  # reduntant explicit dependency just to be clear
+#  depends_on = ["aws_instance.master"]
+#}
 
 resource "aws_security_group" "master" {
   name = "master"
@@ -181,7 +181,8 @@ resource "aws_instance" "master" {
   user_data = <<-EOF
               #!/bin/bash
               echo "Hello, World" > index.html
-              nohup busybox httpd -f -p "${var.master_port}" &
+              #nohup busybox httpd -f -p "${var.master_port}" &
+              docker run --name gohttpserver -tid --net=host mllu/gohttpserver -port "${var.master_port}"
               EOF
 }
 
